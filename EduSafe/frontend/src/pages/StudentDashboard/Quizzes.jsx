@@ -14,22 +14,12 @@ const Quizzes = () => {
   const { user } = useSelector((state) => state.auth);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (user) {
-      fetchData();
-    }
-  }, [user]);
+  useEffect(() => { if (user) fetchData(); }, [user]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      setError(null);
-
-      const [quizzesRes, submissionsRes] = await Promise.all([
-        api.get('/quizzes'),
-        api.get(`/students/${user._id}/quiz-submissions`)
-      ]);
-
+      const [quizzesRes, submissionsRes] = await Promise.all([api.get('/quizzes'), api.get(`/students/${user._id}/quiz-submissions`)]);
       setQuizzes(quizzesRes.data || []);
       setQuizSubmissions(submissionsRes.data || []);
     } catch (err) {
@@ -39,194 +29,22 @@ const Quizzes = () => {
     }
   };
 
-  const takeQuiz = (quizId) => {
-    // Navigate to the quiz taking interface
-    navigate(`/student-dashboard/quizzes/${quizId}/take`);
-  };
+  const takeQuiz = (quizId) => navigate(`/student-dashboard/quizzes/${quizId}/take`);
+  const getQuizSubmission = (quizId) => quizSubmissions.find(sub => sub.quizId === quizId || sub.quizId?._id === quizId);
+  const getScoreColor = (score, passing) => score >= passing ? 'text-green-400' : score >= passing-20 ? 'text-yellow-400' : 'text-red-400';
 
-  const getQuizSubmission = (quizId) => {
-    return quizSubmissions.find(sub => sub.quizId === quizId || sub.quizId?._id === quizId);
-  };
-
-  const getScoreColor = (score, passingScore = 60) => {
-    if (score >= passingScore) return 'text-green-600';
-    if (score >= passingScore - 20) return 'text-yellow-600';
-    return 'text-red-600';
-  };
-
-  if (loading) {
-    return <LoadingSpinner text="Loading quizzes..." />;
-  }
-
-  const availableQuizzes = quizzes.filter(quiz => !getQuizSubmission(quiz._id));
-  const completedQuizzes = quizzes.filter(quiz => getQuizSubmission(quiz._id));
+  if (loading) return <LoadingSpinner text="Loading quizzes..." />;
+  const availableQuizzes = quizzes.filter(q => !getQuizSubmission(q._id));
+  const completedQuizzes = quizzes.filter(q => getQuizSubmission(q._id));
+  const avgScore = completedQuizzes.length ? Math.round(completedQuizzes.reduce((acc,q)=>acc+(getQuizSubmission(q._id)?.score||0),0)/completedQuizzes.length) : 0;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-800">Quizzes & Tests</h2>
-          <p className="text-gray-600">Test your knowledge and track your progress</p>
-        </div>
-        <div className="text-right">
-          <p className="text-sm text-gray-600">Average Score</p>
-          <p className="text-2xl font-bold">
-            {completedQuizzes.length > 0 
-              ? Math.round(completedQuizzes.reduce((acc, quiz) => {
-                  const submission = getQuizSubmission(quiz._id);
-                  return acc + (submission?.score || 0);
-                }, 0) / completedQuizzes.length) 
-              : 0
-            }%
-          </p>
-        </div>
-      </div>
-
+    <div className="space-y-6 animate-fade-in-up">
+      <div className="flex items-center justify-between"><div><h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">Quizzes & Tests</h2><p className="text-cyan-300">Test your knowledge</p></div><div className="text-right"><p className="text-cyan-300 text-sm">Average Score</p><p className="text-2xl font-bold text-white">{avgScore}%</p></div></div>
       {error && <ErrorDisplay error={error} onRetry={fetchData} />}
-
-      {/* Available Quizzes */}
-      <div className="card">
-        <h3 className="text-lg font-semibold mb-6">Available Quizzes ({availableQuizzes.length})</h3>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {availableQuizzes.map((quiz) => (
-            <div key={quiz._id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-              <div className="flex items-center justify-between mb-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <BookOpen className="h-5 w-5 text-blue-600" />
-                </div>
-                <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                  New
-                </span>
-              </div>
-
-              <h4 className="font-semibold text-lg mb-2">{quiz.title}</h4>
-              <p className="text-gray-600 text-sm mb-4">{quiz.description}</p>
-
-              <div className="flex items-center justify-between text-sm text-gray-500 mb-4">
-                <div className="flex items-center">
-                  <Clock className="h-4 w-4 mr-1" />
-                  {quiz.timeLimit} mins
-                </div>
-                <span>{quiz.questions?.length || 0} questions</span>
-              </div>
-
-              <button
-                onClick={() => takeQuiz(quiz._id)}
-                className="btn btn-primary w-full flex items-center justify-center"
-              >
-                <Play className="h-4 w-4 mr-2" />
-                Start Quiz
-              </button>
-            </div>
-          ))}
-          
-          {availableQuizzes.length === 0 && (
-            <div className="col-span-full text-center py-8">
-              <Award className="h-12 w-12 text-green-400 mx-auto mb-3" />
-              <p className="text-gray-500">No new quizzes available</p>
-              <p className="text-sm text-gray-400">Great job! You've completed all available quizzes.</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Completed Quizzes */}
-      {completedQuizzes.length > 0 && (
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-6">Quiz Results ({completedQuizzes.length})</h3>
-          
-          <div className="space-y-4">
-            {completedQuizzes.map((quiz) => {
-              const submission = getQuizSubmission(quiz._id);
-              const isPassed = submission?.score >= (quiz.passingScore || 60);
-              
-              return (
-                <div key={quiz._id} className="border rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h4 className="font-semibold text-lg">{quiz.title}</h4>
-                    <span className={`px-3 py-1 text-sm rounded-full ${
-                      isPassed ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                    }`}>
-                      {isPassed ? 'Passed' : 'Failed'}
-                    </span>
-                  </div>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-3">
-                    <div>
-                      <span className="text-sm text-gray-600">Your Score</span>
-                      <p className={`text-lg font-bold ${getScoreColor(submission?.score, quiz.passingScore)}`}>
-                        {submission?.score}%
-                      </p>
-                    </div>
-                    <div>
-                      <span className="text-sm text-gray-600">Passing Score</span>
-                      <p className="text-lg font-bold text-gray-800">{quiz.passingScore || 60}%</p>
-                    </div>
-                    <div>
-                      <span className="text-sm text-gray-600">Completed</span>
-                      <p className="text-sm text-gray-800">
-                        {new Date(submission?.completedAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                  </div>
-                  
-                  <div className="flex space-x-2">
-                    <button className="btn btn-outline text-sm flex-1">Review Answers</button>
-                    <button 
-                      onClick={() => takeQuiz(quiz._id)}
-                      className="btn btn-primary text-sm flex-1"
-                    >
-                      Retake Quiz
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Performance Summary */}
-      {completedQuizzes.length > 0 && (
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Performance Summary</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">{completedQuizzes.length}</div>
-              <div className="text-sm text-gray-600">Quizzes Taken</div>
-            </div>
-            <div className="text-center p-4 bg-green-50 rounded-lg">
-              <div className="text-2xl font-bold text-green-600">
-                {completedQuizzes.filter(quiz => {
-                  const submission = getQuizSubmission(quiz._id);
-                  return submission?.score >= (quiz.passingScore || 60);
-                }).length}
-              </div>
-              <div className="text-sm text-gray-600">Quizzes Passed</div>
-            </div>
-            <div className="text-center p-4 bg-purple-50 rounded-lg">
-              <div className="text-2xl font-bold text-purple-600">
-                {Math.round(completedQuizzes.reduce((acc, quiz) => {
-                  const submission = getQuizSubmission(quiz._id);
-                  return acc + (submission?.score || 0);
-                }, 0) / completedQuizzes.length)}%
-              </div>
-              <div className="text-sm text-gray-600">Average Score</div>
-            </div>
-            <div className="text-center p-4 bg-orange-50 rounded-lg">
-              <div className="text-2xl font-bold text-orange-600">
-                {Math.max(...completedQuizzes.map(quiz => {
-                  const submission = getQuizSubmission(quiz._id);
-                  return submission?.score || 0;
-                }))}%
-              </div>
-              <div className="text-sm text-gray-600">Best Score</div>
-            </div>
-          </div>
-        </div>
-      )}
+      <div className="bg-black/40 backdrop-blur-md rounded-2xl border border-cyan-500/30 p-5"><h3 className="text-lg font-semibold text-cyan-300 mb-4">Available Quizzes ({availableQuizzes.length})</h3><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{availableQuizzes.map(quiz=>(<div key={quiz._id} className="border border-cyan-500/20 rounded-lg p-4 hover:shadow-neon-cyan transition"><div className="flex justify-between"><div className="p-2 bg-cyan-500/20 rounded-lg"><BookOpen className="h-5 w-5 text-cyan-300" /></div><span className="text-xs bg-blue-500/20 text-cyan-300 px-2 py-1 rounded-full">New</span></div><h4 className="font-semibold text-white mt-2">{quiz.title}</h4><p className="text-gray-400 text-sm">{quiz.description}</p><div className="flex justify-between text-sm text-gray-500 mt-3"><div className="flex items-center gap-1"><Clock className="h-4 w-4" />{quiz.timeLimit} min</div><span>{quiz.questions?.length || 0} questions</span></div><button onClick={()=>takeQuiz(quiz._id)} className="btn btn-primary w-full mt-3 flex items-center justify-center gap-2"><Play className="h-4 w-4" /> Start Quiz</button></div>))}{availableQuizzes.length===0 && <div className="col-span-full text-center py-8 text-gray-400"><Award className="h-12 w-12 mx-auto mb-3 opacity-50" /><p>No new quizzes – great job!</p></div>}</div></div>
+      {completedQuizzes.length>0 && (<div className="bg-black/40 backdrop-blur-md rounded-2xl border border-cyan-500/30 p-5"><h3 className="text-lg font-semibold text-cyan-300 mb-4">Quiz Results ({completedQuizzes.length})</h3><div className="space-y-4">{completedQuizzes.map(quiz=>{const sub=getQuizSubmission(quiz._id); const passed = sub?.score >= (quiz.passingScore||60); return (<div key={quiz._id} className="border border-cyan-500/20 rounded-lg p-4"><div className="flex justify-between items-center"><h4 className="font-semibold text-white">{quiz.title}</h4><span className={`text-xs px-2 py-1 rounded-full ${passed ? "bg-green-500/20 text-green-300" : "bg-red-500/20 text-red-300"}`}>{passed ? "Passed" : "Failed"}</span></div><div className="grid grid-cols-3 gap-4 mt-2"><div><span className="text-xs text-gray-400">Your Score</span><p className={`text-lg font-bold ${getScoreColor(sub?.score, quiz.passingScore||60)}`}>{sub?.score}%</p></div><div><span className="text-xs text-gray-400">Passing</span><p className="text-lg font-bold text-white">{quiz.passingScore||60}%</p></div><div><span className="text-xs text-gray-400">Completed</span><p className="text-sm text-gray-300">{new Date(sub?.completedAt).toLocaleDateString()}</p></div></div><div className="flex gap-2 mt-3"><button className="btn btn-outline text-sm flex-1">Review</button><button onClick={()=>takeQuiz(quiz._id)} className="btn btn-primary text-sm flex-1">Retake</button></div></div>)})}</div></div>)}
+      {completedQuizzes.length>0 && (<div className="bg-black/40 backdrop-blur-md rounded-2xl border border-cyan-500/30 p-5"><h3 className="text-lg font-semibold text-cyan-300 mb-4">Performance Summary</h3><div className="grid grid-cols-4 gap-4"><div className="text-center p-3 bg-blue-500/20 rounded"><div className="text-2xl font-bold text-blue-300">{completedQuizzes.length}</div><div className="text-sm">Taken</div></div><div className="text-center p-3 bg-green-500/20 rounded"><div className="text-2xl font-bold text-green-300">{completedQuizzes.filter(q=>{const s=getQuizSubmission(q._id); return s?.score>=(q.passingScore||60);}).length}</div><div className="text-sm">Passed</div></div><div className="text-center p-3 bg-purple-500/20 rounded"><div className="text-2xl font-bold text-purple-300">{avgScore}%</div><div className="text-sm">Avg Score</div></div><div className="text-center p-3 bg-orange-500/20 rounded"><div className="text-2xl font-bold text-orange-300">{Math.max(...completedQuizzes.map(q=>getQuizSubmission(q._id)?.score||0))}%</div><div className="text-sm">Best</div></div></div></div>)}
     </div>
   );
 };

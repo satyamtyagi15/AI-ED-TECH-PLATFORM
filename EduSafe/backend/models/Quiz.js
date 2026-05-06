@@ -5,15 +5,23 @@ const questionSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  questionType: {
+    type: String,
+    enum: ['mcq', 'truefalse', 'short', 'long'],
+    default: 'mcq'
+  },
   options: [{
     type: String,
-    required: true
+    required: function() {
+      return this.questionType === 'mcq' || this.questionType === 'truefalse';
+    }
   }],
   correctAnswer: {
     type: Number,
-    required: true
+    required: function() {
+      return this.questionType === 'mcq' || this.questionType === 'truefalse';
+    }
   },
-  // NEW: Added GIF/media support for gamification
   media: {
     type: {
       type: String,
@@ -26,7 +34,6 @@ const questionSchema = new mongoose.Schema({
       ref: 'Resource'
     }
   },
-  // NEW: Optional per-question time limit
   timelimitSeconds: Number
 });
 
@@ -51,12 +58,11 @@ const quizSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Resource'
   },
-  timeLimit: Number, // in minutes
+  timeLimit: Number,
   passingScore: {
     type: Number,
     default: 60
   },
-  // NEW: Gamification fields
   category: {
     type: String,
     enum: ['earthquake', 'flood', 'fire', 'tornado', 'tsunami', 'general'],

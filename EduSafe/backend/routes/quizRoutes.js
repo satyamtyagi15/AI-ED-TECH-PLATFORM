@@ -6,7 +6,9 @@ const {
   deleteQuiz,
   submitQuiz, 
   getQuizSubmissions, 
-  getLeaderboard 
+  getLeaderboard,
+  getSubmissionDetails,   // add
+  gradeSubmission    // add
 } = require('../controllers/quizController');
 const { protect } = require('../middleware/authMiddleware');
 const { authRole } = require('../middleware/roleMiddleware');
@@ -24,5 +26,8 @@ router.route('/:id')
 router.post('/:id/submit', protect, authRole(['student']), submitQuiz);
 router.get('/submissions/:quizId', protect, getQuizSubmissions);
 router.get('/leaderboard/:quizId', protect, getLeaderboard);
+// Teacher grades a submission
+router.get('/submission/:submissionId', protect, authRole(['teacher']), getSubmissionDetails);
+router.put('/submission/:submissionId/grade', protect, authRole(['teacher']), gradeSubmission);
 
 module.exports = router;

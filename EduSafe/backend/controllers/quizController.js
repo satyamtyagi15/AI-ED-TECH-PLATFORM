@@ -2,7 +2,6 @@ const Quiz = require('../models/Quiz');
 const QuizSubmission = require('../models/QuizSubmission');
 const mongoose = require('mongoose');
 
-
 // @desc    Get a single quiz
 // @route   GET /api/quizzes/:id
 // @access  Private
@@ -31,11 +30,18 @@ const createQuiz = async (req, res) => {
     const { title, description, questions, resourceId, timeLimit, passingScore, category, xpReward } = req.body;
     const { _id: createdBy, tenantId } = req.user;
 
-    // Validate questions with media
-    const validatedQuestions = questions.map(q => ({
-      ...q,
-      media: q.media || { type: 'none' }
-    }));
+    const validatedQuestions = questions.map(q => {
+      const isSubjective = q.questionType === 'short' || q.questionType === 'long';
+      if (!isSubjective && (!q.options || q.options.length < 2)) {
+        throw new Error(`Question "${q.question}" must have at least 2 options`);
+      }
+      return {
+        ...q,
+        media: q.media || { type: 'none' },
+        options: isSubjective ? [] : q.options,
+        correctAnswer: isSubjective ? 0 : q.correctAnswer
+      };
+    });
 
     const quiz = await Quiz.create({
       title,
@@ -91,15 +97,11 @@ const deleteQuiz = async (req, res) => {
       return res.status(404).json({ message: 'Quiz not found' });
     }
 
-    // Optional: Check if the user is the creator of the quiz
     if (quiz.createdBy.toString() !== userId.toString()) {
       return res.status(403).json({ message: 'Not authorized to delete this quiz' });
     }
 
-    // Delete associated submissions first
     await QuizSubmission.deleteMany({ quizId: id });
-    
-    // Then delete the quiz
     await Quiz.findByIdAndDelete(id);
 
     res.json({ message: 'Quiz deleted successfully' });
@@ -122,20 +124,34 @@ const submitQuiz = async (req, res) => {
       return res.status(404).json({ message: 'Quiz not found' });
     }
 
-    // Calculate score
-    let correctAnswers = 0;
-    const answerResults = answers.map((answer, index) => {
-      const isCorrect = answer.selectedAnswer === quiz.questions[index].correctAnswer;
-      if (isCorrect) correctAnswers++;
-      
+    let correctCount = 0;
+    const answerResults = answers.map((answer, idx) => {
+      const question = quiz.questions[idx];
+      const isSubjective = question.questionType === 'short' || question.questionType === 'long';
+      let isCorrect = false;
+      let storedAnswer = null;
+
+      if (isSubjective) {
+        storedAnswer = answer.textAnswer || '';
+        // Subjective questions are not auto‑graded; teacher can grade later.
+        // For now, they do not affect score.
+      } else {
+        const selectedIdx = answer.selectedAnswer;
+        storedAnswer = selectedIdx;
+        isCorrect = (selectedIdx === question.correctAnswer);
+        if (isCorrect) correctCount++;
+      }
+
       return {
-        questionIndex: index,
-        selectedAnswer: answer.selectedAnswer,
-        isCorrect
+        questionIndex: idx,
+        selectedAnswer: storedAnswer,
+        isCorrect,
+        textAnswer: isSubjective ? answer.textAnswer : undefined
       };
     });
 
-    const score = Math.round((correctAnswers / quiz.questions.length) * 100);
+    const totalAuto = quiz.questions.filter(q => q.questionType !== 'short' && q.questionType !== 'long').length;
+    const score = totalAuto === 0 ? 0 : Math.round((correctCount / totalAuto) * 100);
 
     const submission = await QuizSubmission.create({
       quizId: id,
@@ -164,8 +180,6 @@ const getQuizSubmissions = async (req, res) => {
     const { role, tenantId, _id: userId } = req.user;
 
     let query = { quizId };
-    
-    // Students can only see their own submissions
     if (role === 'student') {
       query.studentId = userId;
     }
@@ -188,7 +202,6 @@ const getLeaderboard = async (req, res) => {
   try {
     const { quizId } = req.params;
     
-    // FIXED: Use new mongoose.Types.ObjectId() instead of mongoose.Types.ObjectId()
     const leaderboard = await QuizSubmission.aggregate([
       { $match: { quizId: new mongoose.Types.ObjectId(quizId) } },
       {
@@ -219,6 +232,94 @@ const getLeaderboard = async (req, res) => {
   }
 };
 
+// ========== NEW FUNCTIONS FOR TEACHER GRADING ==========
+
+// @desc    Get a single submission with full details (for teacher grading)
+// @route   GET /api/quiz-submissions/:submissionId
+// @access  Private (Teacher only)
+const getSubmissionDetails = async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    const { role, tenantId } = req.user;
+    if (role !== 'teacher') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const submission = await QuizSubmission.findById(submissionId)
+      .populate('studentId', 'firstName lastName')
+      .populate('quizId');
+    
+    if (!submission) {
+      return res.status(404).json({ message: 'Submission not found' });
+    }
+
+    // Verify teacher has access to this quiz
+    const quiz = await Quiz.findById(submission.quizId);
+    if (!quiz || quiz.tenantId.toString() !== tenantId.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    res.json(submission);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// @desc    Teacher grades subjective answers and updates score
+// @route   PUT /api/quiz-submissions/:submissionId/grade
+// @access  Private (Teacher only)
+const gradeSubmission = async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    const { grades } = req.body; // Array of { questionIndex, isCorrect }
+    const { role, tenantId } = req.user;
+    if (role !== 'teacher') {
+      return res.status(403).json({ message: 'Access denied' });
+    }
+
+    const submission = await QuizSubmission.findById(submissionId).populate('quizId');
+    if (!submission) {
+      return res.status(404).json({ message: 'Submission not found' });
+    }
+
+    const quiz = await Quiz.findById(submission.quizId);
+    if (!quiz || quiz.tenantId.toString() !== tenantId.toString()) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+
+    // Update grades for subjective questions
+    const updatedAnswers = submission.answers.map(ans => {
+      const gradeUpdate = grades.find(g => g.questionIndex === ans.questionIndex);
+      if (gradeUpdate) {
+        ans.teacherGrade = gradeUpdate.isCorrect ? 1 : 0;
+        // Override isCorrect for subjective questions
+        if (quiz.questions[ans.questionIndex].questionType === 'short' || quiz.questions[ans.questionIndex].questionType === 'long') {
+          ans.isCorrect = gradeUpdate.isCorrect;
+        }
+      }
+      return ans;
+    });
+
+    // Recalculate total score: sum of correct answers (auto + teacher-graded)
+    let correctCount = 0;
+    updatedAnswers.forEach(ans => {
+      if (ans.isCorrect) correctCount++;
+    });
+    const totalQuestions = quiz.questions.length;
+    const newScore = totalQuestions === 0 ? 0 : Math.round((correctCount / totalQuestions) * 100);
+
+    submission.answers = updatedAnswers;
+    submission.score = newScore;
+    await submission.save();
+
+    res.json({ success: true, submission });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+// ========== MODULE EXPORTS ==========
+
 module.exports = { 
   getQuizzes, 
   getQuiz, 
@@ -226,5 +327,7 @@ module.exports = {
   deleteQuiz,
   submitQuiz, 
   getQuizSubmissions, 
-  getLeaderboard 
+  getLeaderboard,
+  getSubmissionDetails,   
+  gradeSubmission        
 };

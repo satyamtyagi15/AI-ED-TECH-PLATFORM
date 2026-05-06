@@ -9,232 +9,145 @@ const SafetyDrills = () => {
   const [drills, setDrills] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [participatingDrillId, setParticipatingDrillId] = useState(null);
   const { user } = useSelector((state) => state.auth);
 
-  useEffect(() => {
-    if (user) {
-      fetchDrills();
-    }
-  }, [user]);
+  useEffect(() => { if (user) fetchDrills(); }, [user]);
 
   const fetchDrills = async () => {
     try {
       setLoading(true);
-      setError(null);
-      const response = await api.get('/drills');
-      setDrills(response.data || []);
+      const res = await api.get('/drills');
+      setDrills(res.data || []);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load drills');
+      setError(err.response?.data?.message);
     } finally {
       setLoading(false);
     }
   };
 
   const participateInDrill = async (drillId) => {
+    setParticipatingDrillId(drillId);
     try {
-      setError(null);
-      // This would mark the student's participation in the drill
-      await api.post(`/drills/${drillId}/participate`, { studentId: user._id });
-      alert('✅ Participation recorded! Stay safe!');
-      fetchDrills(); // Refresh to update status
+      const response = await api.post(`/drills/${drillId}/participate`, { studentId: user._id });
+      if (response.status === 200 || response.status === 201) {
+        // Refresh drills to get updated participant list
+        await fetchDrills();
+        alert('✅ Participation recorded! You are now marked as participating.');
+      } else {
+        throw new Error('Unexpected response');
+      }
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to record participation');
+      const msg = err.response?.data?.message || err.message;
+      alert(`❌ ${msg}`);
+      setError(msg);
+    } finally {
+      setParticipatingDrillId(null);
     }
   };
 
   const getDrillStatus = (drill) => {
     const now = new Date();
-    const scheduledDate = new Date(drill.scheduledDate);
-    
-    if (drill.status === 'completed') return 'completed';
-    if (drill.status === 'in-progress') return 'in-progress';
-    if (now > scheduledDate) return 'missed';
-    if (now >= new Date(scheduledDate.getTime() - 30 * 60000)) return 'starting-soon'; // 30 minutes before
+    const scheduled = new Date(drill.scheduledDate);
+    if (drill.status === 'COMPLETED') return 'completed';
+    if (now > scheduled) return 'missed';
+    const minutesDiff = (scheduled - now) / (1000 * 60);
+    if (minutesDiff <= 30) return 'starting-soon';
     return 'scheduled';
   };
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'completed': return 'bg-green-100 text-green-800';
-      case 'in-progress': return 'bg-blue-100 text-blue-800';
-      case 'starting-soon': return 'bg-orange-100 text-orange-800';
-      case 'missed': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
+  const getStatusColor = (status) => ({
+    completed: "bg-green-500/20 text-green-300",
+    "starting-soon": "bg-orange-500/20 text-orange-300",
+    missed: "bg-red-500/20 text-red-300",
+    scheduled: "bg-gray-500/20 text-gray-300"
+  }[status] || "bg-gray-500/20 text-gray-300");
 
-  const getStatusText = (status) => {
-    switch (status) {
-      case 'completed': return 'Completed';
-      case 'in-progress': return 'In Progress';
-      case 'starting-soon': return 'Starting Soon';
-      case 'missed': return 'Missed';
-      default: return 'Scheduled';
-    }
-  };
+  const getStatusText = (status) => ({
+    completed: "Completed",
+    "starting-soon": "Starting Soon",
+    missed: "Missed",
+    scheduled: "Scheduled"
+  }[status] || status);
 
-  if (loading) {
-    return <LoadingSpinner text="Loading safety drills..." />;
-  }
+  if (loading) return <LoadingSpinner text="Loading safety drills..." />;
 
-  const upcomingDrills = drills.filter(drill => 
-    ['scheduled', 'starting-soon', 'in-progress'].includes(getDrillStatus(drill))
-  );
-  const pastDrills = drills.filter(drill => 
-    ['completed', 'missed'].includes(getDrillStatus(drill))
-  );
+  const upcoming = drills.filter(d => {
+    const status = getDrillStatus(d);
+    return status === 'scheduled' || status === 'starting-soon';
+  });
+  const past = drills.filter(d => {
+    const status = getDrillStatus(d);
+    return status === 'completed' || status === 'missed';
+  });
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6 animate-fade-in-up">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-800">Safety Drills</h2>
-          <p className="text-gray-600">Participate in emergency preparedness drills</p>
-        </div>
-        <div className="text-right">
-          <p className="text-sm text-gray-600">Drill Participation</p>
-          <p className="text-2xl font-bold">
-            {drills.filter(d => getDrillStatus(d) === 'completed').length}/{drills.length}
-          </p>
-        </div>
+        <div><h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">Safety Drills</h2><p className="text-cyan-300">Emergency preparedness drills</p></div>
+        <div><p className="text-cyan-300 text-sm">Participation</p><p className="text-2xl font-bold text-white">{drills.filter(d => d.participants?.some(p => p._id === user._id)).length}/{drills.length}</p></div>
       </div>
 
       {error && <ErrorDisplay error={error} onRetry={fetchDrills} />}
 
-      {/* Safety Instructions */}
-      <div className="card bg-yellow-50 border-yellow-200">
-        <div className="flex items-start space-x-3">
-          <AlertTriangle className="h-6 w-6 text-yellow-600 mt-0.5 flex-shrink-0" />
-          <div>
-            <h3 className="font-semibold text-yellow-800 mb-2">Safety Instructions</h3>
-            <ul className="text-yellow-700 text-sm space-y-1">
-              <li>• Follow your teacher's instructions during drills</li>
-              <li>• Stay calm and move quickly to designated safe areas</li>
-              <li>• Silence your devices and remain quiet during the drill</li>
-              <li>• Wait for the "all clear" signal before returning to normal activities</li>
-            </ul>
-          </div>
-        </div>
+      <div className="bg-black/40 backdrop-blur-md rounded-2xl border border-yellow-500/30 p-4 bg-yellow-500/10">
+        <div className="flex items-start gap-3"><AlertTriangle className="h-5 w-5 text-yellow-400 mt-0.5"/><div><h3 className="font-semibold text-yellow-300">Safety Instructions</h3><ul className="text-sm text-yellow-200 space-y-1"><li>• Follow teacher's instructions</li><li>• Stay calm, move to safe areas</li><li>• Silence devices, remain quiet</li><li>• Wait for "all clear" signal</li></ul></div></div>
       </div>
 
       {/* Upcoming Drills */}
-      <div className="card">
-        <h3 className="text-lg font-semibold mb-6">Upcoming Drills ({upcomingDrills.length})</h3>
-        
+      <div className="bg-black/40 backdrop-blur-md rounded-2xl border border-cyan-500/30 p-5">
+        <h3 className="text-lg font-semibold text-cyan-300 mb-4">Upcoming Drills ({upcoming.length})</h3>
         <div className="space-y-4">
-          {upcomingDrills.map((drill) => {
+          {upcoming.map(drill => {
             const status = getDrillStatus(drill);
-            const isParticipant = drill.participants?.includes(user._id);
-            
+            const isParticipant = drill.participants?.some(p => p._id === user._id);
             return (
-              <div key={drill._id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center space-x-3">
-                    <div className="p-2 bg-orange-100 rounded-lg">
-                      <AlertTriangle className="h-5 w-5 text-orange-600" />
-                    </div>
-                    <div>
-                      <h4 className="font-semibold text-lg">{drill.title}</h4>
-                      <p className="text-gray-600">{drill.description}</p>
-                    </div>
+              <div key={drill._id} className="border border-cyan-500/20 rounded-lg p-4">
+                <div className="flex justify-between">
+                  <div className="flex gap-3">
+                    <div className="p-2 bg-orange-500/20 rounded"><AlertTriangle className="h-5 w-5 text-orange-400" /></div>
+                    <div><h4 className="font-semibold text-white">{drill.title}</h4><p className="text-gray-300 text-sm">{drill.description}</p></div>
                   </div>
-                  <span className={`px-3 py-1 text-sm rounded-full ${getStatusColor(status)}`}>
-                    {getStatusText(status)}
-                  </span>
+                  <span className={`px-3 py-1 text-sm rounded-full ${getStatusColor(status)}`}>{getStatusText(status)}</span>
                 </div>
-
-                <div className="flex items-center justify-between text-sm text-gray-600 mb-4">
-                  <div className="flex items-center">
-                    <Calendar className="h-4 w-4 mr-1" />
-                    {new Date(drill.scheduledDate).toLocaleDateString()}
-                  </div>
-                  <div className="flex items-center">
-                    <Clock className="h-4 w-4 mr-1" />
-                    {new Date(drill.scheduledDate).toLocaleTimeString([], { 
-                      hour: '2-digit', minute: '2-digit' 
-                    })}
-                  </div>
+                <div className="flex justify-between text-sm text-gray-400 mt-2">
+                  <div className="flex items-center gap-1"><Calendar className="h-4 w-4" />{new Date(drill.scheduledDate).toLocaleDateString()}</div>
+                  <div className="flex items-center gap-1"><Clock className="h-4 w-4" />{new Date(drill.scheduledDate).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>
                 </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">
-                    {drill.participants?.length || 0} participants registered
-                  </span>
-                  
-                  {status === 'in-progress' && !isParticipant && (
+                <div className="flex justify-between items-center mt-3">
+                  <span className="text-sm text-gray-400">{drill.participants?.length || 0} participants</span>
+                  {!isParticipant && (
                     <button
                       onClick={() => participateInDrill(drill._id)}
-                      className="btn btn-primary flex items-center"
+                      disabled={participatingDrillId === drill._id}
+                      className="btn btn-primary text-sm flex items-center gap-1"
                     >
-                      <Play className="h-4 w-4 mr-2" />
-                      Join Drill
+                      {participatingDrillId === drill._id ? 'Submitting...' : <><Play className="h-4 w-4" /> Participate</>}
                     </button>
                   )}
-                  
-                  {status === 'in-progress' && isParticipant && (
-                    <span className="text-green-600 text-sm font-medium flex items-center">
-                      <CheckCircle className="h-4 w-4 mr-1" />
-                      Participating
-                    </span>
-                  )}
-                  
-                  {status === 'starting-soon' && (
-                    <span className="text-orange-600 text-sm font-medium">
-                      Starting in 30 minutes
-                    </span>
-                  )}
-                  
-                  {status === 'scheduled' && (
-                    <span className="text-gray-600 text-sm">
-                      {Math.ceil((new Date(drill.scheduledDate) - new Date()) / (1000 * 60 * 60 * 24))} days away
-                    </span>
-                  )}
+                  {isParticipant && <span className="text-green-400 text-sm"><CheckCircle className="h-4 w-4 inline mr-1" /> Participating</span>}
+                  {status === 'starting-soon' && !isParticipant && <span className="text-orange-400 text-sm">Starting in 30 min</span>}
                 </div>
               </div>
             );
           })}
-          
-          {upcomingDrills.length === 0 && (
-            <div className="text-center py-8">
-              <CheckCircle className="h-16 w-16 text-green-400 mx-auto mb-4" />
-              <p className="text-gray-500">No upcoming drills scheduled</p>
-              <p className="text-sm text-gray-400">Check back later for new safety drills.</p>
-            </div>
-          )}
+          {upcoming.length === 0 && <div className="text-center py-8 text-gray-400"><CheckCircle className="h-16 w-16 mx-auto mb-3 opacity-50" /><p>No upcoming drills</p></div>}
         </div>
       </div>
 
       {/* Past Drills */}
-      {pastDrills.length > 0 && (
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-6">Drill History ({pastDrills.length})</h3>
-          
+      {past.length > 0 && (
+        <div className="bg-black/40 backdrop-blur-md rounded-2xl border border-cyan-500/30 p-5">
+          <h3 className="text-lg font-semibold text-cyan-300 mb-4">Drill History ({past.length})</h3>
           <div className="space-y-3">
-            {pastDrills.map((drill) => {
+            {past.map(drill => {
               const status = getDrillStatus(drill);
-              const isParticipant = drill.participants?.includes(user._id);
-              
+              const isParticipant = drill.participants?.some(p => p._id === user._id);
               return (
-                <div key={drill._id} className="border rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium">{drill.title}</h4>
-                    <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(status)}`}>
-                      {getStatusText(status)}
-                    </span>
-                  </div>
-                  
-                  <div className="flex items-center justify-between text-sm text-gray-600">
-                    <span>
-                      {new Date(drill.scheduledDate).toLocaleDateString()} • 
-                      {new Date(drill.scheduledDate).toLocaleTimeString([], { 
-                        hour: '2-digit', minute: '2-digit' 
-                      })}
-                    </span>
-                    <span className={isParticipant ? 'text-green-600' : 'text-red-600'}>
-                      {isParticipant ? 'Participated' : 'Not Participated'}
-                    </span>
-                  </div>
+                <div key={drill._id} className="flex justify-between items-center p-3 border-b border-cyan-500/20">
+                  <div><h4 className="text-white">{drill.title}</h4><div className="text-sm text-gray-400">{new Date(drill.scheduledDate).toLocaleDateString()}</div></div>
+                  <span className={`text-xs px-2 py-1 rounded-full ${getStatusColor(status)}`}>{getStatusText(status)}</span>
+                  <span className={isParticipant ? "text-green-400" : "text-red-400"}>{isParticipant ? "Participated" : "Missed"}</span>
                 </div>
               );
             })}
@@ -242,27 +155,14 @@ const SafetyDrills = () => {
         </div>
       )}
 
-      {/* Participation Stats */}
+      {/* Drill Participation Stats */}
       {drills.length > 0 && (
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Drill Participation</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">{drills.length}</div>
-              <div className="text-sm text-gray-600">Total Drills</div>
-            </div>
-            <div className="text-center p-4 bg-green-50 rounded-lg">
-              <div className="text-2xl font-bold text-green-600">
-                {drills.filter(d => d.participants?.includes(user._id)).length}
-              </div>
-              <div className="text-sm text-gray-600">Participated</div>
-            </div>
-            <div className="text-center p-4 bg-purple-50 rounded-lg">
-              <div className="text-2xl font-bold text-purple-600">
-                {Math.round((drills.filter(d => d.participants?.includes(user._id)).length / drills.length) * 100)}%
-              </div>
-              <div className="text-sm text-gray-600">Participation Rate</div>
-            </div>
+        <div className="bg-black/40 backdrop-blur-md rounded-2xl border border-cyan-500/30 p-5">
+          <h3 className="text-lg font-semibold text-cyan-300 mb-4">Drill Participation</h3>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="text-center p-3 bg-blue-500/20 rounded"><div className="text-2xl font-bold text-blue-300">{drills.length}</div><div className="text-sm">Total Drills</div></div>
+            <div className="text-center p-3 bg-green-500/20 rounded"><div className="text-2xl font-bold text-green-300">{drills.filter(d => d.participants?.some(p => p._id === user._id)).length}</div><div className="text-sm">Participated</div></div>
+            <div className="text-center p-3 bg-purple-500/20 rounded"><div className="text-2xl font-bold text-purple-300">{drills.length ? Math.round((drills.filter(d => d.participants?.some(p => p._id === user._id)).length / drills.length) * 100) : 0}%</div><div className="text-sm">Rate</div></div>
           </div>
         </div>
       )}

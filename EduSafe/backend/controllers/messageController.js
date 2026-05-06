@@ -146,10 +146,35 @@ const getConversation = async (req, res) => {
   }
 };
 
+// @desc    Delete a message (sender or receiver can delete)
+// @route   DELETE /api/messages/:id
+// @access  Private
+const deleteMessage = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { _id: userId } = req.user;
+
+    const message = await Message.findOne({
+      _id: id,
+      $or: [{ sender: userId }, { receiver: userId }]
+    });
+
+    if (!message) {
+      return res.status(404).json({ message: 'Message not found or not authorized' });
+    }
+
+    await message.deleteOne();
+    res.json({ message: 'Message deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   sendMessage,
   getMessages,
   markAsRead,
   getUnreadCount,
-  getConversation
+  getConversation,
+   deleteMessage
 };

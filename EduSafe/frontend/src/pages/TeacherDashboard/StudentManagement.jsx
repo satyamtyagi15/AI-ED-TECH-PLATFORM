@@ -13,25 +13,14 @@ const StudentManagement = () => {
   const [activeTab, setActiveTab] = useState("all");
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [showStudentDetails, setShowStudentDetails] = useState(false);
-
   const { user } = useSelector((state) => state.auth);
 
-  useEffect(() => {
-    if (user) {
-      fetchStudents();
-    }
-  }, [user]);
+  useEffect(() => { if (user) fetchStudents(); }, [user]);
 
   const fetchStudents = async () => {
     try {
       setLoading(true);
-      setError(null);
-      
-      const [studentsRes, progressRes] = await Promise.all([
-        api.get(`/teachers/${user._id}/students`),
-        api.get(`/progress/class`)
-      ]);
-
+      const [studentsRes, progressRes] = await Promise.all([api.get(`/teachers/${user._id}/students`), api.get(`/progress/class`)]);
       setStudents(studentsRes.data || []);
       setClassProgress(progressRes.data || []);
     } catch (err) {
@@ -45,13 +34,8 @@ const StudentManagement = () => {
     const message = prompt(`Enter message for ${studentName}:`);
     if (message) {
       try {
-        setError(null);
-        await api.post('/messages', {
-          receiverId: studentId,
-          subject: 'Message from Teacher',
-          message: message
-        });
-        alert(`Message sent to ${studentName} successfully!`);
+        await api.post('/messages', { receiverId: studentId, subject: 'Message from Teacher', message });
+        alert(`Message sent to ${studentName}!`);
       } catch (err) {
         setError(err.response?.data?.message || "Failed to send message");
       }
@@ -60,267 +44,32 @@ const StudentManagement = () => {
 
   const viewStudentDetails = async (student) => {
     try {
-      setError(null);
-      // Fetch detailed student information using the new user endpoint
       const response = await api.get(`/users/${student._id}`);
-      setSelectedStudent({
-        ...student,
-        details: response.data
-      });
+      setSelectedStudent({ ...student, details: response.data });
       setShowStudentDetails(true);
     } catch (err) {
-      setError("Failed to load student details. Student details feature not fully implemented.");
+      setError("Failed to load student details");
     }
   };
 
   const getStudentProgress = (studentId) => {
-    const progress = classProgress.find(p => p.student && p.student._id === studentId);
-    return progress ? {
-      quizScore: progress.progress?.averageScore || 0,
-      resourcesCompleted: progress.completedResources || 0,
-      attendance: progress.progress?.overall || 0
-    } : {
-      quizScore: 0,
-      resourcesCompleted: 0,
-      attendance: 0
-    };
+    const prog = classProgress.find(p => p.student && p.student._id === studentId);
+    return prog ? { quizScore: prog.progress?.averageScore || 0, resourcesCompleted: prog.completedResources || 0, attendance: prog.progress?.overall || 0 } : { quizScore: 0, resourcesCompleted: 0, attendance: 0 };
   };
 
-  if (loading) {
-    return <LoadingSpinner text="Loading students..." />;
-  }
+  if (loading) return <LoadingSpinner text="Loading students..." />;
 
-  const filteredStudents = students.filter(student => {
-    if (activeTab === "all") return true;
-    const progress = getStudentProgress(student._id);
-    if (activeTab === "active") return progress.attendance > 80;
-    if (activeTab === "needsAttention") return progress.quizScore < 60;
-    return true;
-  });
-
-  const classStats = {
-    totalStudents: students.length,
-    passingQuizzes: students.filter(s => getStudentProgress(s._id).quizScore >= 60).length,
-    avgAttendance: students.length > 0 
-      ? Math.round(students.reduce((acc, s) => acc + getStudentProgress(s._id).attendance, 0) / students.length)
-      : 0,
-    activeLearners: students.filter(s => getStudentProgress(s._id).resourcesCompleted > 5).length
-  };
+  const filteredStudents = students.filter(s => { const prog = getStudentProgress(s._id); if(activeTab==="active") return prog.attendance > 80; if(activeTab==="needsAttention") return prog.quizScore < 60; return true; });
+  const classStats = { totalStudents: students.length, passingQuizzes: students.filter(s=>getStudentProgress(s._id).quizScore>=60).length, avgAttendance: students.length ? Math.round(students.reduce((a,s)=>a+getStudentProgress(s._id).attendance,0)/students.length) : 0, activeLearners: students.filter(s=>getStudentProgress(s._id).resourcesCompleted>5).length };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-800">Student Management</h2>
-          <p className="text-gray-600">Manage and monitor student progress</p>
-        </div>
-        <div className="text-right">
-          <p className="text-sm text-gray-600">Total Students</p>
-          <p className="text-2xl font-bold">{students.length}</p>
-        </div>
-      </div>
-
+    <div className="space-y-6 animate-fade-in-up">
+      <div className="flex items-center justify-between"><div><h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">Student Management</h2><p className="text-cyan-300">Manage and monitor student progress</p></div><div className="text-right"><p className="text-cyan-300 text-sm">Total Students</p><p className="text-2xl font-bold text-white">{students.length}</p></div></div>
       {error && <ErrorDisplay error={error} onRetry={fetchStudents} />}
-
-      {/* Tab Navigation */}
-      <div className="border-b border-gray-200">
-        <nav className="flex space-x-8">
-          {[
-            { id: "all", label: "All Students", count: students.length },
-            { id: "active", label: "Active", count: students.filter(s => getStudentProgress(s._id).attendance > 80).length },
-            { id: "needsAttention", label: "Needs Attention", count: students.filter(s => getStudentProgress(s._id).quizScore < 60).length }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
-                activeTab === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              <span>{tab.label}</span>
-              <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded-full text-xs">
-                {tab.count}
-              </span>
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      {/* Students Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredStudents.map((student) => {
-          const progress = getStudentProgress(student._id);
-          
-          return (
-            <div key={student._id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-              <div className="flex items-center space-x-3 mb-3">
-                <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
-                  {student.firstName?.[0]}{student.lastName?.[0]}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="font-semibold text-lg truncate">
-                    {student.firstName} {student.lastName}
-                  </h4>
-                  <p className="text-sm text-gray-600">Grade {student.grade}</p>
-                </div>
-              </div>
-
-              {/* Progress Stats */}
-              <div className="grid grid-cols-3 gap-2 mb-4">
-                <div className="text-center">
-                  <BookOpen className="h-4 w-4 mx-auto mb-1 text-blue-600" />
-                  <span className="text-xs font-medium">Quiz Score</span>
-                  <div className={`text-sm font-bold ${
-                    progress.quizScore >= 60 ? 'text-green-600' : 'text-red-600'
-                  }`}>
-                    {progress.quizScore}%
-                  </div>
-                </div>
-                <div className="text-center">
-                  <BarChart3 className="h-4 w-4 mx-auto mb-1 text-green-600" />
-                  <span className="text-xs font-medium">Resources</span>
-                  <div className="text-sm font-bold text-gray-800">
-                    {progress.resourcesCompleted}
-                  </div>
-                </div>
-                <div className="text-center">
-                  <Users className="h-4 w-4 mx-auto mb-1 text-purple-600" />
-                  <span className="text-xs font-medium">Progress</span>
-                  <div className={`text-sm font-bold ${
-                    progress.attendance >= 80 ? 'text-green-600' : 'text-yellow-600'
-                  }`}>
-                    {progress.attendance}%
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex space-x-2">
-                <button 
-                  onClick={() => sendMessageToStudent(student._id, `${student.firstName} ${student.lastName}`)}
-                  className="btn btn-outline text-sm flex-1 flex items-center justify-center"
-                  title="Send message to student"
-                >
-                  <MessageCircle className="h-4 w-4 mr-1" />
-                  Message
-                </button>
-                <button 
-                  onClick={() => viewStudentDetails(student)}
-                  className="btn btn-primary text-sm flex-1 flex items-center justify-center"
-                  title="View student details"
-                >
-                  <Eye className="h-4 w-4 mr-1" />
-                  Details
-                </button>
-              </div>
-            </div>
-          );
-        })}
-        
-        {filteredStudents.length === 0 && (
-          <div className="col-span-full text-center py-12">
-            <Users className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-            <p className="text-gray-500">
-              {activeTab === "all" 
-                ? "No students assigned to your class" 
-                : `No students match the "${activeTab}" filter`
-              }
-            </p>
-          </div>
-        )}
-      </div>
-
-      {/* Student Details Modal */}
-      {showStudentDetails && selectedStudent && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-semibold">Student Details</h3>
-                <button
-                  onClick={() => setShowStudentDetails(false)}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <span className="text-2xl">×</span>
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                <div className="flex items-center space-x-3">
-                  <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold text-xl">
-                    {selectedStudent.firstName?.[0]}{selectedStudent.lastName?.[0]}
-                  </div>
-                  <div>
-                    <h4 className="font-semibold text-lg">
-                      {selectedStudent.firstName} {selectedStudent.lastName}
-                    </h4>
-                    <p className="text-gray-600">Grade {selectedStudent.grade}</p>
-                    {selectedStudent.details?.email && (
-                      <p className="text-sm text-gray-500">{selectedStudent.details.email}</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="text-center p-3 bg-blue-50 rounded-lg">
-                    <div className="text-lg font-bold text-blue-600">
-                      {getStudentProgress(selectedStudent._id).quizScore}%
-                    </div>
-                    <div className="text-sm text-gray-600">Quiz Score</div>
-                  </div>
-                  <div className="text-center p-3 bg-green-50 rounded-lg">
-                    <div className="text-lg font-bold text-green-600">
-                      {getStudentProgress(selectedStudent._id).resourcesCompleted}
-                    </div>
-                    <div className="text-sm text-gray-600">Resources Completed</div>
-                  </div>
-                </div>
-
-                <div className="text-center">
-                  <button 
-                    onClick={() => {
-                      setShowStudentDetails(false);
-                      sendMessageToStudent(selectedStudent._id, `${selectedStudent.firstName} ${selectedStudent.lastName}`);
-                    }}
-                    className="btn btn-primary w-full"
-                  >
-                    <MessageCircle className="h-4 w-4 mr-2" />
-                    Send Message
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Class Summary */}
-      {students.length > 0 && (
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Class Summary</h3>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">{classStats.totalStudents}</div>
-              <div className="text-sm text-gray-600">Total Students</div>
-            </div>
-            <div className="text-center p-4 bg-green-50 rounded-lg">
-              <div className="text-2xl font-bold text-green-600">{classStats.passingQuizzes}</div>
-              <div className="text-sm text-gray-600">Passing Quizzes</div>
-            </div>
-            <div className="text-center p-4 bg-yellow-50 rounded-lg">
-              <div className="text-2xl font-bold text-yellow-600">{classStats.avgAttendance}%</div>
-              <div className="text-sm text-gray-600">Avg Progress</div>
-            </div>
-            <div className="text-center p-4 bg-purple-50 rounded-lg">
-              <div className="text-2xl font-bold text-purple-600">{classStats.activeLearners}</div>
-              <div className="text-sm text-gray-600">Active Learners</div>
-            </div>
-          </div>
-        </div>
-      )}
+      <div className="border-b border-cyan-500/30"><nav className="flex space-x-8">{["all","active","needsAttention"].map(tab=>(<button key={tab} onClick={()=>setActiveTab(tab)} className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${activeTab===tab ? "border-cyan-400 text-cyan-300" : "border-transparent text-gray-400 hover:text-gray-300"}`}>{tab==="all"?"All Students":tab==="active"?"Active":"Needs Attention"}<span className="text-xs bg-gray-700 px-2 py-0.5 rounded-full">{tab==="all"?students.length:tab==="active"?students.filter(s=>getStudentProgress(s._id).attendance>80).length:students.filter(s=>getStudentProgress(s._id).quizScore<60).length}</span></button>))}</nav></div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{filteredStudents.map(s=>{const prog=getStudentProgress(s._id); return (<div key={s._id} className="border border-cyan-500/20 rounded-lg p-4 hover:shadow-neon-cyan transition"><div className="flex items-center gap-3 mb-3"><div className="w-12 h-12 rounded-full bg-gradient-to-r from-cyan-500 to-purple-600 flex items-center justify-center text-white font-bold">{s.firstName[0]}{s.lastName[0]}</div><div><h4 className="font-semibold text-white">{s.firstName} {s.lastName}</h4><p className="text-sm text-cyan-300">Grade {s.grade}</p></div></div><div className="grid grid-cols-3 gap-2 mb-4 text-center"><div><BookOpen className="h-4 w-4 mx-auto text-blue-400" /><div className="text-xs text-gray-400">Quiz Score</div><div className={`text-sm font-bold ${prog.quizScore>=60?"text-green-400":"text-red-400"}`}>{prog.quizScore}%</div></div><div><BarChart3 className="h-4 w-4 mx-auto text-green-400" /><div className="text-xs text-gray-400">Resources</div><div className="text-sm font-bold text-white">{prog.resourcesCompleted}</div></div><div><Users className="h-4 w-4 mx-auto text-purple-400" /><div className="text-xs text-gray-400">Progress</div><div className={`text-sm font-bold ${prog.attendance>=80?"text-green-400":"text-yellow-400"}`}>{prog.attendance}%</div></div></div><div className="flex gap-2"><button onClick={()=>sendMessageToStudent(s._id,`${s.firstName} ${s.lastName}`)} className="btn btn-outline text-sm flex-1 flex items-center justify-center gap-1"><MessageCircle className="h-4 w-4" /> Message</button><button onClick={()=>viewStudentDetails(s)} className="btn btn-primary text-sm flex-1 flex items-center justify-center gap-1"><Eye className="h-4 w-4" /> Details</button></div></div>)} )}{filteredStudents.length===0 && <div className="col-span-full text-center py-12 text-gray-400"><Users className="h-16 w-16 mx-auto mb-3 opacity-50" /><p>No students match filter</p></div>}</div>
+      {showStudentDetails && selectedStudent && (<div className="fixed inset-0 bg-black/70 flex justify-center items-center z-50"><div className="bg-black/90 rounded-2xl border border-cyan-500/30 p-6 max-w-md w-full"><div className="flex justify-between"><h3 className="text-xl font-semibold text-cyan-300">Student Details</h3><button onClick={()=>setShowStudentDetails(false)} className="text-gray-400 hover:text-white"><X className="h-6 w-6" /></button></div><div className="space-y-4 mt-4"><div className="flex items-center gap-4"><div className="w-16 h-16 rounded-full bg-gradient-to-r from-cyan-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">{selectedStudent.firstName[0]}{selectedStudent.lastName[0]}</div><div><h4 className="text-white font-semibold">{selectedStudent.firstName} {selectedStudent.lastName}</h4><p className="text-cyan-300">Grade {selectedStudent.grade}</p><p className="text-gray-400 text-sm">{selectedStudent.details?.email}</p></div></div><div className="grid grid-cols-2 gap-4"><div className="text-center p-3 bg-blue-500/20 rounded"><div className="text-xl font-bold text-blue-300">{getStudentProgress(selectedStudent._id).quizScore}%</div><div className="text-sm">Quiz Score</div></div><div className="text-center p-3 bg-green-500/20 rounded"><div className="text-xl font-bold text-green-300">{getStudentProgress(selectedStudent._id).resourcesCompleted}</div><div className="text-sm">Completed</div></div></div><button onClick={()=>{setShowStudentDetails(false); sendMessageToStudent(selectedStudent._id, `${selectedStudent.firstName} ${selectedStudent.lastName}`);}} className="btn btn-primary w-full flex items-center justify-center gap-2"><MessageCircle className="h-4 w-4" /> Send Message</button></div></div></div>)}
+      {students.length>0 && (<div className="bg-black/40 backdrop-blur-md rounded-2xl border border-cyan-500/30 p-5"><h3 className="text-lg font-semibold text-cyan-300 mb-4">Class Summary</h3><div className="grid grid-cols-4 gap-4"><div className="text-center p-3 bg-blue-500/20 rounded"><div className="text-2xl font-bold text-blue-300">{classStats.totalStudents}</div><div className="text-sm">Total Students</div></div><div className="text-center p-3 bg-green-500/20 rounded"><div className="text-2xl font-bold text-green-300">{classStats.passingQuizzes}</div><div className="text-sm">Passing Quizzes</div></div><div className="text-center p-3 bg-yellow-500/20 rounded"><div className="text-2xl font-bold text-yellow-300">{classStats.avgAttendance}%</div><div className="text-sm">Avg Progress</div></div><div className="text-center p-3 bg-purple-500/20 rounded"><div className="text-2xl font-bold text-purple-300">{classStats.activeLearners}</div><div className="text-sm">Active Learners</div></div></div></div>)}
     </div>
   );
 };

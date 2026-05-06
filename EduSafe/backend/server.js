@@ -42,6 +42,8 @@ app.use('/api/teachers', require('./routes/teacherRoutes'));
 app.use('/api/students', require('./routes/studentRoutes'));
 app.use('/api/parents', require('./routes/parentRoutes'));
 app.use('/api/director', require('./routes/directorRoutes'));
+app.use('/api/live-sessions', require('./routes/liveSessionRoutes'));
+app.use('/api/ai', require('./routes/aiRoutes'));
 // Base route
 app.get('/', (req, res) => {
   res.json({

@@ -5,6 +5,9 @@ import DashboardOverview from "./DashboardOverview";
 import QuizManagement from "./QuizManagement";
 import DrillManagement from "./DrillManagement";
 import StudentManagement from "./StudentManagement";
+import MessageCenter from "./MessageCenter";
+import LiveSessions from './LiveSessions';
+import AIQuizGenerator from './AIQuizGenerator';
 
 const TeacherDashboard = () => {
   return (
@@ -15,6 +18,9 @@ const TeacherDashboard = () => {
         <Route path="quizzes" element={<QuizManagement />} />
         <Route path="drills" element={<DrillManagement />} />
         <Route path="students" element={<StudentManagement />} />
+        <Route path="messages" element={<MessageCenter />} />
+        <Route path="live-sessions" element={<LiveSessions />} />
+        <Route path="ai-quiz-generator" element={<AIQuizGenerator />} />
       </Routes>
     </Layout>
   );

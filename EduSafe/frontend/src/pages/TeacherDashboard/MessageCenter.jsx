@@ -1,46 +1,38 @@
 import React, { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { api } from "../../utils/api";
-import { Send, Mail, MailOpen, User, ArrowLeft, Trash2 } from "lucide-react";
+import { Send, Mail, User, ArrowLeft, Trash2 } from "lucide-react";
 import LoadingSpinner from "../../components/LoadingSpinner";
 import ErrorDisplay from "../../components/ErrorDisplay";
 
 const MessageCenter = () => {
-  const [messages, setMessages] = useState([]);
+  const [receivedMessages, setReceivedMessages] = useState([]);
+  const [sentMessages, setSentMessages] = useState([]);
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeView, setActiveView] = useState("inbox"); // 'inbox', 'sent', 'compose'
+  const [activeView, setActiveView] = useState("inbox");
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [conversation, setConversation] = useState([]);
-
-  const [newMessage, setNewMessage] = useState({
-    receiverId: "",
-    subject: "",
-    message: ""
-  });
-
+  const [newMessage, setNewMessage] = useState({ receiverId: "", subject: "", message: "" });
   const { user } = useSelector((state) => state.auth);
 
-  useEffect(() => {
-    if (user) {
-      fetchData();
-    }
-  }, [user]);
+  useEffect(() => { if (user) fetchData(); }, [user]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      const [messagesRes, studentsRes] = await Promise.all([
+      const [studentsRes, receivedRes, sentRes] = await Promise.all([
+        api.get(`/teachers/${user._id}/students`),
         api.get('/messages?type=received'),
-        api.get(`/teachers/${user._id}/students`)
+        api.get('/messages?type=sent')
       ]);
-
-      setMessages(messagesRes.data || []);
       setStudents(studentsRes.data || []);
+      setReceivedMessages(receivedRes.data || []);
+      setSentMessages(sentRes.data || []);
     } catch (err) {
+      console.error("Fetch error:", err);
       setError(err.response?.data?.message || "Failed to load messages");
     } finally {
       setLoading(false);
@@ -49,38 +41,57 @@ const MessageCenter = () => {
 
   const fetchConversation = async (studentId) => {
     try {
-      const response = await api.get(`/messages/conversation/${studentId}`);
-      setConversation(response.data || []);
+      const res = await api.get(`/messages/conversation/${studentId}`);
+      setConversation(res.data || []);
     } catch (err) {
+      console.error("Conversation error:", err);
       setError("Failed to load conversation");
     }
   };
 
   const handleSendMessage = async (e) => {
     e.preventDefault();
+    if (!newMessage.receiverId) {
+      setError("Please select a student");
+      return;
+    }
     try {
-      setError(null);
       await api.post('/messages', newMessage);
-      
-      setNewMessage({
-        receiverId: "",
-        subject: "",
-        message: ""
-      });
-      
+      setNewMessage({ receiverId: "", subject: "", message: "" });
+      // Refresh sent messages after sending
+      const sentRes = await api.get('/messages?type=sent');
+      setSentMessages(sentRes.data || []);
       setActiveView("sent");
-      fetchData(); // Refresh messages
     } catch (err) {
+      console.error("Send error:", err);
       setError(err.response?.data?.message || "Failed to send message");
     }
   };
 
   const markMessageAsRead = async (messageId) => {
-    try {
+    try { 
       await api.put(`/messages/${messageId}/read`);
-      fetchData(); // Refresh to update read status
-    } catch (err) {
-      console.error("Failed to mark as read:", err);
+      const receivedRes = await api.get('/messages?type=received');
+      setReceivedMessages(receivedRes.data || []);
+    } catch (err) { console.error(err); }
+  };
+
+  const deleteMessage = async (messageId, e) => {
+    e.stopPropagation();
+    if (window.confirm("Delete this message?")) {
+      try {
+        await api.delete(`/messages/${messageId}`);
+        // Refresh both inbox and sent after deletion
+        const [receivedRes, sentRes] = await Promise.all([
+          api.get('/messages?type=received'),
+          api.get('/messages?type=sent')
+        ]);
+        setReceivedMessages(receivedRes.data || []);
+        setSentMessages(sentRes.data || []);
+        if (selectedStudent) await fetchConversation(selectedStudent._id);
+      } catch (err) {
+        setError("Failed to delete message");
+      }
     }
   };
 
@@ -90,286 +101,125 @@ const MessageCenter = () => {
     setActiveView("conversation");
   };
 
-  const getUnreadCount = () => messages.filter(m => !m.isRead).length;
+  const getUnreadCount = () => receivedMessages.filter(m => !m.isRead).length;
 
-  if (loading) {
-    return <LoadingSpinner text="Loading messages..." />;
-  }
+  if (loading) return <LoadingSpinner text="Loading messages..." />;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-6 animate-fade-in-up">
       <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-800">Message Center</h2>
-          <p className="text-gray-600">Communicate with your students</p>
-        </div>
-        <button 
-          onClick={() => setActiveView("compose")}
-          className="btn btn-primary flex items-center"
-        >
-          <Send className="h-4 w-4 mr-2" />
-          New Message
-        </button>
+        <div><h2 className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400">Message Center</h2><p className="text-cyan-300">Communicate with students</p></div>
+        <button onClick={() => setActiveView("compose")} className="btn btn-primary neon-button flex items-center gap-2"><Send className="h-4 w-4" />New Message</button>
       </div>
-
       {error && <ErrorDisplay error={error} onRetry={fetchData} />}
-
-      {/* Navigation Tabs */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-cyan-500/30">
         <nav className="flex space-x-8">
           {[
             { id: "inbox", label: "Inbox", count: getUnreadCount() },
-            { id: "sent", label: "Sent", count: 0 },
+            { id: "sent", label: "Sent", count: sentMessages.length },
             { id: "compose", label: "Compose", count: 0 }
-          ].map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveView(tab.id)}
-              className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 ${
-                activeView === tab.id
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveView(tab.id)} className={`py-3 px-1 border-b-2 font-medium text-sm flex items-center space-x-2 transition-all ${activeView === tab.id ? 'border-cyan-400 text-cyan-300' : 'border-transparent text-gray-400 hover:text-gray-300'}`}>
               <span>{tab.label}</span>
-              {tab.count > 0 && (
-                <span className="bg-red-100 text-red-600 px-2 py-1 rounded-full text-xs">
-                  {tab.count}
-                </span>
-              )}
+              {tab.count > 0 && <span className="bg-red-500/20 text-red-300 px-2 py-1 rounded-full text-xs">{tab.count}</span>}
             </button>
           ))}
         </nav>
       </div>
 
-      {/* Inbox View */}
       {activeView === "inbox" && (
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Received Messages</h3>
+        <div className="bg-black/40 backdrop-blur-md rounded-2xl border border-cyan-500/30 p-5">
+          <h3 className="text-lg font-semibold text-cyan-300 mb-4">Received Messages</h3>
           <div className="space-y-3">
-            {messages.map((message) => (
-              <div 
-                key={message._id} 
-                className={`border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer ${
-                  !message.isRead ? 'bg-blue-50 border-blue-200' : ''
-                }`}
-                onClick={() => {
-                  viewConversation(message.sender);
-                  if (!message.isRead) markMessageAsRead(message._id);
-                }}
-              >
+            {receivedMessages.map(msg => (
+              <div key={msg._id} className={`border rounded-lg p-4 transition-all cursor-pointer relative ${!msg.isRead ? 'bg-cyan-500/10 border-cyan-500/30' : 'border-cyan-500/20'}`} onClick={() => { viewConversation(msg.sender); if (!msg.isRead) markMessageAsRead(msg._id); }}>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    {!message.isRead && (
-                      <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
-                    )}
-                    <User className="h-5 w-5 text-gray-400" />
+                    {!msg.isRead && <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse"></div>}
+                    <User className="h-5 w-5 text-cyan-400" />
                     <div>
-                      <h4 className="font-semibold">
-                        {message.sender.firstName} {message.sender.lastName}
-                      </h4>
-                      <p className="text-gray-600">{message.subject}</p>
+                      <h4 className="font-semibold text-white">{msg.sender.firstName} {msg.sender.lastName}</h4>
+                      <p className="text-cyan-300 text-sm">{msg.subject}</p>
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm text-gray-500">
-                      {new Date(message.createdAt).toLocaleDateString()}
-                    </div>
-                    <div className="text-xs text-gray-400">
-                      {message.isRead ? (
-                        <span className="flex items-center text-green-600">
-                          <MailOpen className="h-3 w-3 mr-1" />
-                          Read
-                        </span>
-                      ) : (
-                        <span className="flex items-center text-blue-600">
-                          <Mail className="h-3 w-3 mr-1" />
-                          Unread
-                        </span>
-                      )}
-                    </div>
+                    <div className="text-sm text-gray-400">{new Date(msg.createdAt).toLocaleDateString()}</div>
+                    <div className="text-xs text-gray-500">{msg.isRead ? 'Read' : 'Unread'}</div>
                   </div>
                 </div>
-                <p className="mt-2 text-gray-700 line-clamp-2">{message.message}</p>
+                <p className="mt-2 text-gray-300 line-clamp-2">{msg.message}</p>
+                <button onClick={(e) => deleteMessage(msg._id, e)} className="absolute top-2 right-2 text-red-400 hover:text-red-300"><Trash2 className="h-4 w-4" /></button>
               </div>
             ))}
-            
-            {messages.length === 0 && (
-              <div className="text-center py-8">
-                <Mail className="h-16 w-16 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500">No messages received yet</p>
-              </div>
-            )}
+            {receivedMessages.length === 0 && <div className="text-center py-8 text-gray-400"><Mail className="h-16 w-16 mx-auto mb-3 opacity-50" /><p>No messages received</p></div>}
           </div>
         </div>
       )}
 
-      {/* Sent Messages View */}
       {activeView === "sent" && (
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Sent Messages</h3>
+        <div className="bg-black/40 backdrop-blur-md rounded-2xl border border-cyan-500/30 p-5">
+          <h3 className="text-lg font-semibold text-cyan-300 mb-4">Sent Messages</h3>
           <div className="space-y-3">
-            {messages.filter(m => m.sender._id === user._id).map((message) => (
-              <div key={message._id} className="border rounded-lg p-4">
+            {sentMessages.map(msg => (
+              <div key={msg._id} className="border border-cyan-500/20 rounded-lg p-4 relative">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <User className="h-5 w-5 text-gray-400" />
-                    <div>
-                      <h4 className="font-semibold">
-                        To: {message.receiver.firstName} {message.receiver.lastName}
-                      </h4>
-                      <p className="text-gray-600">{message.subject}</p>
-                    </div>
-                  </div>
-                  <div className="text-sm text-gray-500">
-                    {new Date(message.createdAt).toLocaleDateString()}
-                  </div>
+                  <div className="flex items-center space-x-3"><User className="h-5 w-5 text-cyan-400" /><div><h4 className="font-semibold text-white">To: {msg.receiver.firstName} {msg.receiver.lastName}</h4><p className="text-cyan-300 text-sm">{msg.subject}</p></div></div>
+                  <div className="text-sm text-gray-400">{new Date(msg.createdAt).toLocaleDateString()}</div>
                 </div>
-                <p className="mt-2 text-gray-700">{message.message}</p>
+                <p className="mt-2 text-gray-300">{msg.message}</p>
+                <button onClick={(e) => deleteMessage(msg._id, e)} className="absolute top-2 right-2 text-red-400"><Trash2 className="h-4 w-4" /></button>
               </div>
             ))}
+            {sentMessages.length === 0 && <div className="text-center py-8 text-gray-400"><Send className="h-16 w-16 mx-auto mb-3 opacity-50" /><p>No sent messages yet</p></div>}
           </div>
         </div>
       )}
 
-      {/* Compose Message View */}
       {activeView === "compose" && (
-        <div className="card">
-          <h3 className="text-lg font-semibold mb-4">Compose New Message</h3>
+        <div className="bg-black/40 backdrop-blur-md rounded-2xl border border-cyan-500/30 p-5">
+          <h3 className="text-lg font-semibold text-cyan-300 mb-4">Compose New Message</h3>
           <form onSubmit={handleSendMessage} className="space-y-4">
             <div>
-              <label className="form-label">To (Student)</label>
-              <select
-                value={newMessage.receiverId}
-                onChange={(e) => setNewMessage({ ...newMessage, receiverId: e.target.value })}
-                className="form-input"
-                required
-              >
+              <label className="form-label text-cyan-300">To (Student)</label>
+              <select value={newMessage.receiverId} onChange={(e) => setNewMessage({ ...newMessage, receiverId: e.target.value })} className="form-input" required>
                 <option value="">Select a student</option>
-                {students.map((student) => (
-                  <option key={student._id} value={student._id}>
-                    {student.firstName} {student.lastName} (Grade {student.grade})
-                  </option>
-                ))}
+                {students.length === 0 && <option disabled>Loading students...</option>}
+                {students.map(s => (<option key={s._id} value={s._id}>{s.firstName} {s.lastName} (Grade {s.grade})</option>))}
               </select>
+              {students.length === 0 && <p className="text-xs text-yellow-400 mt-1">No students assigned. Contact admin.</p>}
             </div>
-
-            <div>
-              <label className="form-label">Subject</label>
-              <input
-                type="text"
-                value={newMessage.subject}
-                onChange={(e) => setNewMessage({ ...newMessage, subject: e.target.value })}
-                className="form-input"
-                placeholder="Enter message subject"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="form-label">Message</label>
-              <textarea
-                value={newMessage.message}
-                onChange={(e) => setNewMessage({ ...newMessage, message: e.target.value })}
-                className="form-input"
-                rows="6"
-                placeholder="Enter your message"
-                required
-              />
-            </div>
-
+            <div><label className="form-label text-cyan-300">Subject</label><input type="text" value={newMessage.subject} onChange={(e) => setNewMessage({ ...newMessage, subject: e.target.value })} className="form-input" required /></div>
+            <div><label className="form-label text-cyan-300">Message</label><textarea value={newMessage.message} onChange={(e) => setNewMessage({ ...newMessage, message: e.target.value })} className="form-input" rows="6" required /></div>
             <div className="flex justify-end space-x-3">
-              <button
-                type="button"
-                onClick={() => setActiveView("inbox")}
-                className="btn btn-outline"
-              >
-                Cancel
-              </button>
-              <button type="submit" className="btn btn-primary flex items-center">
-                <Send className="h-4 w-4 mr-2" />
-                Send Message
-              </button>
+              <button type="button" onClick={() => setActiveView("inbox")} className="btn btn-outline">Cancel</button>
+              <button type="submit" className="btn btn-primary neon-button flex items-center gap-2"><Send className="h-4 w-4 mr-2" />Send Message</button>
             </div>
           </form>
         </div>
       )}
 
-      {/* Conversation View */}
       {activeView === "conversation" && selectedStudent && (
-        <div className="card">
+        <div className="bg-black/40 backdrop-blur-md rounded-2xl border border-cyan-500/30 p-5">
           <div className="flex items-center space-x-3 mb-4">
-            <button 
-              onClick={() => setActiveView("inbox")}
-              className="btn btn-outline"
-            >
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Inbox
-            </button>
-            <h3 className="text-lg font-semibold">
-              Conversation with {selectedStudent.firstName} {selectedStudent.lastName}
-            </h3>
+            <button onClick={() => setActiveView("inbox")} className="btn btn-outline"><ArrowLeft className="h-4 w-4 mr-2" />Back</button>
+            <h3 className="text-lg font-semibold text-white">Chat with {selectedStudent.firstName} {selectedStudent.lastName}</h3>
           </div>
-
-          <div className="space-y-4 max-h-96 overflow-y-auto">
-            {conversation.map((msg) => (
-              <div 
-                key={msg._id} 
-                className={`p-4 rounded-lg ${
-                  msg.sender._id === user._id 
-                    ? 'bg-blue-50 ml-8' 
-                    : 'bg-gray-50 mr-8'
-                }`}
-              >
+          <div className="space-y-4 max-h-96 overflow-y-auto p-2">
+            {conversation.map(msg => (
+              <div key={msg._id} className={`p-4 rounded-lg relative ${msg.sender._id === user._id ? 'bg-cyan-500/20 ml-8' : 'bg-gray-800/50 mr-8'}`}>
                 <div className="flex justify-between items-start mb-2">
-                  <span className="font-semibold">
-                    {msg.sender._id === user._id ? 'You' : `${msg.sender.firstName} ${msg.sender.lastName}`}
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    {new Date(msg.createdAt).toLocaleString()}
-                  </span>
+                  <span className="font-semibold text-white">{msg.sender._id === user._id ? 'You' : `${msg.sender.firstName} ${msg.sender.lastName}`}</span>
+                  <span className="text-sm text-gray-400">{new Date(msg.createdAt).toLocaleString()}</span>
                 </div>
-                <p className="text-gray-700">{msg.message}</p>
+                <p className="text-gray-200">{msg.message}</p>
+                <button onClick={(e) => deleteMessage(msg._id, e)} className="absolute top-2 right-2 text-red-400"><Trash2 className="h-4 w-4" /></button>
               </div>
             ))}
-            
-            {conversation.length === 0 && (
-              <div className="text-center py-8">
-                <p className="text-gray-500">No messages in this conversation yet</p>
-              </div>
-            )}
+            {conversation.length === 0 && <div className="text-center py-8 text-gray-400"><p>No messages yet</p></div>}
           </div>
-
-          {/* Quick Reply */}
-          <form 
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const formData = new FormData(e.target);
-              const message = formData.get('quickReply');
-              
-              if (message.trim()) {
-                await api.post('/messages', {
-                  receiverId: selectedStudent._id,
-                  subject: `Re: Conversation`,
-                  message: message.trim()
-                });
-                e.target.reset();
-                fetchConversation(selectedStudent._id);
-              }
-            }}
-            className="mt-4 flex space-x-2"
-          >
-            <input
-              name="quickReply"
-              type="text"
-              placeholder="Type a quick reply..."
-              className="form-input flex-1"
-              required
-            />
-            <button type="submit" className="btn btn-primary">
-              <Send className="h-4 w-4" />
-            </button>
+          <form onSubmit={async (e) => { e.preventDefault(); const formData = new FormData(e.target); const message = formData.get('quickReply'); if (message.trim()) { await api.post('/messages', { receiverId: selectedStudent._id, subject: `Re: Conversation`, message: message.trim() }); e.target.reset(); await fetchConversation(selectedStudent._id); await fetchData(); } }} className="mt-4 flex space-x-2">
+            <input name="quickReply" type="text" placeholder="Quick reply..." className="form-input flex-1" required />
+            <button type="submit" className="btn btn-primary"><Send className="h-4 w-4" /></button>
           </form>
         </div>
       )}

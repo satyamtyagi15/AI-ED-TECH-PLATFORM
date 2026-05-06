@@ -5,10 +5,19 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    extensions: ['.js', '.jsx', '.json'], // allow JSX inside .js files
+    extensions: ['.js', '.jsx', '.json'],
   },
   esbuild: {
     loader: 'jsx',
-    include: /src\/.*\.[jt]sx?$/, // enable JSX in .js, .jsx, .ts, .tsx
+    include: /src\/.*\.[jt]sx?$/,
+  },
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
 })

@@ -61,9 +61,13 @@ func main() {
 
     api := router.Group("/api/ai")
     {
-        // NO authentication middleware for /chat
+        // Existing endpoints
         api.POST("/chat", chatHandler.SendMessage)
         api.GET("/conversations", chatHandler.GetConversations)
+
+        // New endpoints for quiz generator & daily challenge
+        api.POST("/generate-quiz", chatHandler.GenerateQuiz)
+        api.POST("/generate-daily-challenge", chatHandler.GenerateDailyChallenge)
     }
 
     port := os.Getenv("AI_SERVICE_PORT")

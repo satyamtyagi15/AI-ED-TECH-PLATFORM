@@ -2,8 +2,19 @@ const mongoose = require('mongoose');
 
 const answerSchema = new mongoose.Schema({
   questionIndex: Number,
-  selectedAnswer: Number,
-  isCorrect: Boolean
+  selectedAnswer: mongoose.Schema.Types.Mixed,
+  isCorrect: {
+    type: Boolean,
+    default: false
+  },
+  textAnswer: String,
+  // For subjective questions, teacher can override isCorrect later
+  teacherGrade: {
+    type: Number,
+    min: 0,
+    max: 1,
+    default: null // null = not graded yet
+  }
 });
 
 const quizSubmissionSchema = new mongoose.Schema({
@@ -22,7 +33,7 @@ const quizSubmissionSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  timeTaken: Number, // in seconds
+  timeTaken: Number,
   completedAt: {
     type: Date,
     default: Date.now

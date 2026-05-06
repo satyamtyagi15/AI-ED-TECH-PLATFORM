@@ -10,6 +10,7 @@ import EmergencyContacts from "./EmergencyContacts";
 import TakeQuiz from "./TakeQuiz";
 import MessageCenter from "./MessageCenter";
 import { MessageCircle } from "lucide-react";
+import JoinLiveSession from './JoinLiveSession';
 
 const StudentDashboard = () => {
   return (
@@ -35,7 +36,7 @@ const StudentDashboard = () => {
         <Route path="emergency" element={<EmergencyContacts />} />
         <Route path="messages" element={<MessageCenter />} />
         <Route path="ai-assistant" element={<AIAssistant />} />
-        
+        <Route path="live-sessions" element={<JoinLiveSession />} />
       </Routes>
     </Layout>
   );

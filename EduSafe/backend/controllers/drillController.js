@@ -32,7 +32,7 @@ const createDrill = async (req, res) => {
       participants,
       tenantId,
       createdBy,
-      status: 'PENDING' // FIXED: Use the correct enum value
+      status: 'PENDING'
     });
 
     const populatedDrill = await Drill.findById(drill._id)
@@ -53,7 +53,6 @@ const updateDrillStatus = async (req, res) => {
     const { id } = req.params;
     const { status, feedback } = req.body;
 
-    // FIXED: Validate status against allowed enum values
     const allowedStatuses = ['PENDING', 'COMPLETED'];
     if (!allowedStatuses.includes(status)) {
       return res.status(400).json({ 
@@ -97,4 +96,39 @@ const deleteDrill = async (req, res) => {
   }
 };
 
-module.exports = { getDrills, createDrill, updateDrillStatus, deleteDrill };
+// @desc    Student participates in a drill
+// @route   POST /api/drills/:id/participate
+// @access  Private (Student)
+const participateDrill = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { studentId } = req.body;
+    const userId = req.user._id;
+
+    if (studentId !== userId.toString()) {
+      return res.status(403).json({ message: 'You can only participate on your own behalf' });
+    }
+
+    const drill = await Drill.findById(id);
+    if (!drill) {
+      return res.status(404).json({ message: 'Drill not found' });
+    }
+
+    if (drill.participants.includes(studentId)) {
+      return res.status(400).json({ message: 'Already participating in this drill' });
+    }
+
+    drill.participants.push(studentId);
+    await drill.save();
+
+    const updatedDrill = await Drill.findById(id)
+      .populate('createdBy', 'firstName lastName')
+      .populate('participants', 'firstName lastName');
+
+    res.json(updatedDrill);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
+module.exports = { getDrills, createDrill, updateDrillStatus, deleteDrill, participateDrill };
