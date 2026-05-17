@@ -115,6 +115,16 @@ exports.generateQuiz = async (req, res) => {
       media: { type: 'none' }
     }));
 
+    // ✅ FIX: Map category to valid enum values (must match Quiz.js)
+    const validCategories = [
+      'earthquake', 'flood', 'fire', 'tornado', 'tsunami', 'general',
+      'mental health', 'safety', 'health', 'science', 'technology'
+    ];
+    let category = quizData.category || 'general';
+    if (!validCategories.includes(category)) {
+      category = 'general';
+    }
+
     const newQuiz = await Quiz.create({
       title: quizData.title,
       description: quizData.description || `Auto-generated from content. Grade ${grade}`,
@@ -123,7 +133,7 @@ exports.generateQuiz = async (req, res) => {
       createdBy,
       timeLimit: quizData.timeLimit || 30,
       passingScore: quizData.passingScore || 60,
-      category: quizData.category || 'general',
+      category: category,  // ✅ Now using mapped category
       xpReward: quizData.xpReward || 100
     });
 

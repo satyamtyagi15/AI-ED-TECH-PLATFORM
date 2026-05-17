@@ -41,7 +41,8 @@ func NewAIClient() *AIClient {
     apiKey := os.Getenv("OPENROUTER_API_KEY")
     model := os.Getenv("OPENROUTER_MODEL")
     if model == "" {
-        model = "meta-llama/llama-3.2-3b-instruct"
+        // Use a guaranteed working model (change to any from https://openrouter.ai/models)
+        model = "openai/gpt-3.5-turbo"
     }
     return &AIClient{
         apiKey: apiKey,
@@ -50,6 +51,11 @@ func NewAIClient() *AIClient {
 }
 
 func (c *AIClient) SendMessage(userMessage string, history []Message) (string, error) {
+    // Check API key
+    if c.apiKey == "" {
+        return "", fmt.Errorf("OPENROUTER_API_KEY not set in .env file")
+    }
+
     messages := []Message{
         {
             Role:    "system",
@@ -76,6 +82,7 @@ func (c *AIClient) SendMessage(userMessage string, history []Message) (string, e
     }
 
     req.Header.Set("Content-Type", "application/json")
+    // OpenRouter accepts both Bearer and X-OpenRouter-Key
     req.Header.Set("Authorization", "Bearer "+c.apiKey)
     req.Header.Set("HTTP-Referer", "http://localhost:8080")
     req.Header.Set("X-Title", "EduSafe AI")
@@ -83,15 +90,18 @@ func (c *AIClient) SendMessage(userMessage string, history []Message) (string, e
     client := &http.Client{}
     resp, err := client.Do(req)
     if err != nil {
-        return "", err
+        return "", fmt.Errorf("request failed: %w", err)
     }
     defer resp.Body.Close()
 
-    log.Printf("OpenRouter response status: %s", resp.Status)
-
     bodyBytes, _ := io.ReadAll(resp.Body)
+    
+    log.Printf("OpenRouter response status: %s", resp.Status)
+    
     if resp.StatusCode != http.StatusOK {
-        return "", fmt.Errorf("API error %s: %s", resp.Status, string(bodyBytes))
+        // Log full response for debugging
+        log.Printf("Response body: %s", string(bodyBytes))
+        return "", fmt.Errorf("OpenRouter error %s: %s", resp.Status, string(bodyBytes))
     }
 
     var openRouterResp OpenRouterResponse

@@ -65,7 +65,7 @@ const quizSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: ['earthquake', 'flood', 'fire', 'tornado', 'tsunami', 'general'],
+    enum: ['earthquake', 'flood', 'fire', 'tornado', 'tsunami', 'general', 'mental health', 'safety', 'health', 'science', 'technology'],
     default: 'general'
   },
   xpReward: {
